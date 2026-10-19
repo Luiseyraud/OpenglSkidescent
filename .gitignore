@@ -1,0 +1,6 @@
+# Fichiers compilés
+build/
+skieur
+
+# Zip d'origine du prof (gardé en local comme référence, pas dans git)
+IOGL-homework.zip
