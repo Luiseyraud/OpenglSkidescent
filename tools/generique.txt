@@ -1,0 +1,13 @@
+La descente du skieur
+Projet OpenGL
+
+Skieur : « Skier » par apelab (Poly Pizza), CC-BY 3.0
+Chalet : « Snowy North American Chalet Cabin – Low Poly » par ARTEL_3D (Sketchfab), CC-BY 4.0
+Drapeaux : « Flag 1 » par Chris Daniel (Poly Pizza), CC-BY 3.0
+Pylônes d'éclairage : « Stadium Light » par thundermind (Sketchfab), CC-BY 4.0
+Tribunes : « Seating » par Krish (Sketchfab), CC-BY 4.0
+Sapins et rochers : Quaternius (Poly Pizza), CC0
+Texture de neige : « Snow 02 » par Rob Tuytel (Poly Haven), CC0
+Code de base : cours « Learn Modern OpenGL Programming » (Steve Jones, Game Institute / Packt)
+
+Terrain, ciel, lumières, caméra, bandes bleues, filets, public et effets de neige : générés par le programme

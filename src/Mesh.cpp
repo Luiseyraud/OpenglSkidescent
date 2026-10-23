@@ -37,7 +37,7 @@ std::vector<std::string> split(std::string s, std::string t)
 // Constructor
 //-----------------------------------------------------------------------------
 Mesh::Mesh()
-	:mLoaded(false)
+	:mLoaded(false), mVBO(0), mVAO(0), mInstanceVBO(0), mInstanceCount(0)	// CORRECTION : VBO et VAO n'étaient pas initialisés
 {
 }
 
@@ -46,8 +46,11 @@ Mesh::Mesh()
 //-----------------------------------------------------------------------------
 Mesh::~Mesh()
 {
+	if (!mLoaded)	// CORRECTION : rien à libérer si le chargement a échoué
+		return;
 	glDeleteVertexArrays(1, &mVAO);
 	glDeleteBuffers(1, &mVBO);
+	glDeleteBuffers(1, &mInstanceVBO);
 }
 
 //-----------------------------------------------------------------------------
@@ -200,6 +203,20 @@ bool Mesh::loadOBJ(const std::string& filename)
 }
 
 //-----------------------------------------------------------------------------
+// AJOUT : crée la mesh à partir de sommets calculés par le code, et non lus
+// dans un fichier (3 sommets par triangle, comme après loadOBJ).
+//-----------------------------------------------------------------------------
+bool Mesh::create(const std::vector<Vertex>& vertices)
+{
+	if (mLoaded || vertices.empty())
+		return false;
+
+	mVertices = vertices;
+	initBuffers();
+	return (mLoaded = true);
+}
+
+//-----------------------------------------------------------------------------
 // Create and initialize the vertex buffer and vertex array object
 // Must have valid, non-empty std::vector of Vertex objects.
 //-----------------------------------------------------------------------------
@@ -237,6 +254,45 @@ void Mesh::draw()
 
 	glBindVertexArray(mVAO);
 	glDrawArrays(GL_TRIANGLES, 0, mVertices.size());
+	glBindVertexArray(0);
+}
+
+//-----------------------------------------------------------------------------
+// AJOUT : instancing. On envoie une fois pour toutes la matrice "model" de
+// chaque exemplaire. Elle devient un attribut de sommet (locations 3 à 6 :
+// une mat4 = 4 vec4), qui change à chaque exemplaire et non à chaque sommet
+// (glVertexAttribDivisor = 1).
+//-----------------------------------------------------------------------------
+void Mesh::setInstances(const std::vector<glm::mat4>& models)
+{
+	if (!mLoaded) return;
+
+	mInstanceCount = (GLsizei)models.size();
+	if (mInstanceVBO == 0)
+		glGenBuffers(1, &mInstanceVBO);
+
+	glBindVertexArray(mVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
+	glBufferData(GL_ARRAY_BUFFER, models.size() * sizeof(glm::mat4), models.data(), GL_STATIC_DRAW);
+
+	for (int i = 0; i < 4; i++)
+	{
+		glVertexAttribPointer(3 + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (GLvoid*)(i * sizeof(glm::vec4)));
+		glEnableVertexAttribArray(3 + i);
+		glVertexAttribDivisor(3 + i, 1);
+	}
+	glBindVertexArray(0);
+}
+
+//-----------------------------------------------------------------------------
+// AJOUT : dessine tous les exemplaires en un seul appel
+//-----------------------------------------------------------------------------
+void Mesh::drawInstanced()
+{
+	if (!mLoaded || mInstanceCount == 0) return;
+
+	glBindVertexArray(mVAO);
+	glDrawArraysInstanced(GL_TRIANGLES, 0, mVertices.size(), mInstanceCount);
 	glBindVertexArray(0);
 }
 

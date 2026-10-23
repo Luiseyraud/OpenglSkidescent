@@ -4,6 +4,7 @@
 #include "Texture2D.h"
 #include <iostream>
 #include <cassert>
+#include <algorithm>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image/stb_image.h"
 
@@ -61,6 +62,20 @@ bool Texture2D::loadTexture(const string& fileName, bool generateMipMaps)
 		}
 	}
 
+	// AJOUT : l'envoi à OpenGL est maintenant dans createFromPixels (aussi utilisé
+	// pour les textures calculées par le code)
+	bool ok = createFromPixels(width, height, imageData, generateMipMaps);
+	stbi_image_free(imageData);
+	return ok;
+}
+
+//-----------------------------------------------------------------------------
+// AJOUT : crée la texture à partir d'une image déjà en mémoire (4 octets RGBA
+// par pixel, en sRGB, la première ligne étant le BAS de l'image : v = 0).
+// Code repris de loadTexture.
+//-----------------------------------------------------------------------------
+bool Texture2D::createFromPixels(int width, int height, const unsigned char* rgba, bool generateMipMaps)
+{
 	glGenTextures(1, &mTexture);
 	glBindTexture(GL_TEXTURE_2D, mTexture); // all upcoming GL_TEXTURE_2D operations will affect our texture object (mTexture)
 
@@ -73,18 +88,39 @@ bool Texture2D::loadTexture(const string& fileName, bool generateMipMaps)
 	// GL_NEAREST
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	// CORRECTION : avec GL_LINEAR, les mipmaps n'étaient jamais utilisées (scintillement au loin)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, generateMipMaps ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, imageData);
+	// AJOUT : filtrage anisotrope, pour qu'une texture vue de biais (la neige) reste nette
+	if (GLEW_EXT_texture_filter_anisotropic)
+	{
+		GLfloat maxAnisotropy = 1.0f;
+		glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAnisotropy);
+		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, std::min(maxAnisotropy, 8.0f));
+	}
+
+	// CORRECTION : les images sont en sRGB. Avec GL_SRGB8_ALPHA8, OpenGL les convertit
+	// en couleurs linéaires à la lecture, ce que demande la correction gamma.
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
 
 	if (generateMipMaps)
 		glGenerateMipmap(GL_TEXTURE_2D);
 
-	stbi_image_free(imageData);
 	glBindTexture(GL_TEXTURE_2D, 0); // unbind texture when done so we don't accidentally mess up our mTexture
 
 	return true;
+}
+
+//-----------------------------------------------------------------------------
+// AJOUT : crée une texture d'un seul pixel, de couleur unie.
+// Utile pour dessiner un objet d'une seule couleur avec le shader du cours,
+// qui lit toujours sa couleur dans une texture.
+//-----------------------------------------------------------------------------
+bool Texture2D::createSolidColor(unsigned char r, unsigned char g, unsigned char b)
+{
+	unsigned char pixel[4] = { r, g, b, 255 };	// couleur en sRGB, comme une image
+	return createFromPixels(1, 1, pixel, false);
 }
 
 //-----------------------------------------------------------------------------

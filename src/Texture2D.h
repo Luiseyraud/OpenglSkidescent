@@ -16,6 +16,8 @@ public:
 	virtual ~Texture2D();
 
 	bool loadTexture(const string& fileName, bool generateMipMaps = true);
+	bool createSolidColor(unsigned char r, unsigned char g, unsigned char b);	// AJOUT
+	bool createFromPixels(int width, int height, const unsigned char* rgba, bool generateMipMaps);	// AJOUT
 	void bind(GLuint texUnit = 0);
 	void unbind(GLuint texUnit = 0);
 

@@ -27,7 +27,12 @@ public:
 	~Mesh();
 
 	bool loadOBJ(const std::string& filename);
+	bool create(const std::vector<Vertex>& vertices);	// AJOUT : mesh calculée par le code (triangles)
 	void draw();
+
+	// AJOUT : instancing (le même modèle à plusieurs endroits, en un seul appel)
+	void setInstances(const std::vector<glm::mat4>& models);
+	void drawInstanced();
 
 private:
 
@@ -36,5 +41,7 @@ private:
 	bool mLoaded;
 	std::vector<Vertex> mVertices;
 	GLuint mVBO, mVAO;
+	GLuint mInstanceVBO;		// AJOUT : matrices des exemplaires
+	GLsizei mInstanceCount;		// AJOUT
 };
 #endif //MESH_H

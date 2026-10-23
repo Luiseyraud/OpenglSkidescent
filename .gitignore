@@ -1,6 +1,17 @@
 # Fichiers compilés
 build/
 skieur
-
 # Zip d'origine du prof (gardé en local comme référence, pas dans git)
 IOGL-homework.zip
+
+# Modèles téléchargés d'origine (lourds) : seuls les fichiers convertis vont dans git
+models/sources/
+
+# Marqueurs ajoutés par Windows aux fichiers téléchargés
+*:Zone.Identifier
+
+# Vidéos produites
+*.mp4
+
+# Cache de Python (créé quand un script importe convert_model.py)
+__pycache__/
