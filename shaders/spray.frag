@@ -14,6 +14,8 @@ uniform vec3 eye;			// position de la caméra
 uniform vec3 sunDir;		// L : direction VERS le soleil
 uniform vec3 sunColor;
 uniform vec3 ambient;		// lumière du ciel
+uniform vec3 localLight;	// lumière des projecteurs à l'endroit du skieur
+uniform float scatter;		// force de la diffusion vers l'avant
 
 out vec4 frag_color;
 
@@ -35,14 +37,14 @@ void main()
 	if (alpha < 0.003)
 		discard;
 
-	// Éclairage : la neige (blanche à 90 %) reçoit le ciel et le soleil. Une
-	// poussière fine diffuse surtout la lumière VERS L'AVANT : quand la caméra
-	// regarde vers le soleil à travers la gerbe, elle s'illumine (contre-jour).
+	// Éclairage : la neige (blanche à 90 %) reçoit le ciel, le soleil et les
+	// projecteurs. Une poussière fine diffuse surtout la lumière VERS L'AVANT :
+	// quand la caméra regarde vers le soleil à travers la gerbe, elle s'illumine
+	// (contre-jour).
 	vec3 viewDir = normalize(worldPos - eye);
 	float forward = pow(max(dot(viewDir, sunDir), 0.0), 6.0);
-	vec3 color = 0.9 * (ambient + 0.6 * sunColor) + 2.5 * forward * sunColor;
+	vec3 color = 0.9 * (ambient + 0.6 * sunColor + 0.7 * localLight) + scatter * forward * sunColor;
 
-	// Correction gamma, puis alpha prémultiplié
-	color = pow(color, vec3(1.0 / 2.2));
+	// Couleur linéaire HDR (gamma : voir tonemap.frag), en alpha prémultiplié
 	frag_color = vec4(color * alpha, alpha);
 }

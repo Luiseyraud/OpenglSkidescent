@@ -2,11 +2,12 @@
 // Fragment shader de la scène
 //
 // Dérivé de lighting_dir_point_spot.frag du cours (Blinn-Phong, 1 lumière
-// directionnelle, 3 ponctuelles, 1 spot, mêmes noms d'uniforms). Changements :
-//   1. la lumière ambiante vient du ciel (et plus de spotLight.ambient) ;
+// directionnelle, 3 ponctuelles, 1 spot, mêmes noms d'uniforms). Différences :
+//   1. la lumière ambiante vient du ciel (et non de spotLight.ambient) ;
 //   2. la couleur de la texture est lue une seule fois (albedo) ;
 //   3. brouillard : au loin, le terrain prend la couleur du ciel derrière lui ;
-//   4. correction gamma à la sortie (les calculs se font en couleurs linéaires) ;
+//   4. sortie en couleurs linéaires HDR (elles peuvent dépasser 1) : la correction
+//      gamma est faite à la fin, après le bloom (voir PostProcess) ;
 //   5. surfaces éclairées des deux côtés (filets), et alpha de la texture en
 //      sortie (trous du filet, voir World::render) ;
 //   6. en plus de la frontale (spotLight), un tableau de spots : les projecteurs
@@ -67,13 +68,13 @@ in vec2 TexCoord;
 in vec3 FragPos;
 in vec3 Normal;
 
-#define MAX_POINT_LIGHTS 10		// 3 dans le cours : 3 lampadaires, la lampe du chalet, 6 pour les guirlandes des tribunes
+#define MAX_POINT_LIGHTS 10		// 3 lampadaires, la lampe du chalet, 6 pour les guirlandes des tribunes
 
 uniform DirectionalLight sunLight;
 uniform PointLight pointLights[MAX_POINT_LIGHTS];
 uniform SpotLight spotLight;		// la frontale du skieur
 
-#define MAX_FLOODLIGHTS 16				// projecteurs des pylônes (8 paires)
+#define MAX_FLOODLIGHTS 72				// faisceaux des pylônes (18 paires de pylônes, 2 faisceaux chacun)
 uniform SpotLight floodLights[MAX_FLOODLIGHTS];
 uniform int floodLightCount;			// nombre de projecteurs utilisés
 uniform Material material;
@@ -133,8 +134,8 @@ void main()
 	float visibility = exp(-pow(distance * fogDensity, 2.0));
 	outColor = mix(skyColor(-viewDir), outColor, visibility);
 
-	// Correction gamma -------------------------------------------------------------------------
-	frag_color = vec4(pow(outColor, vec3(1.0 / 2.2)), texel.a);	// alpha < 1 : trous du filet
+	// Couleur linéaire HDR (gamma : voir tonemap.frag) ; alpha < 1 : trous du filet
+	frag_color = vec4(outColor, texel.a);
 }
 
 //-----------------------------------------------------------------------------------------------

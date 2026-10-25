@@ -102,8 +102,8 @@ bool SkiTrail::build(const Spline& piste, const Terrain& terrain)
 	int count = (int)((timeline::DURATION - timeline::SKI_START) * TRAIL_SAMPLES) + 1;
 	for (int i = 0; i < count; i++)
 	{
-		float t = timeline::SKI_START + i / TRAIL_SAMPLES;
-		timeline::SkierState skier = timeline::skierState(t, piste, terrain);
+		float tau = timeline::SKI_START + i / TRAIL_SAMPLES;		// temps du skieur
+		timeline::SkierState skier = timeline::skierStateAt(tau, piste, terrain);
 
 		// En l'air, ou arrêté : pas de nouvelle section
 		bool moved = glm::length(skier.position - lastPosition) > 0.01f;
@@ -158,7 +158,7 @@ bool SkiTrail::build(const Spline& piste, const Terrain& terrain)
 //-----------------------------------------------------------------------------
 void SkiTrail::draw(float t)
 {
-	int i = (int)std::floor((t - timeline::SKI_START) * TRAIL_SAMPLES);
+	int i = (int)std::floor((timeline::simTime(t) - timeline::SKI_START) * TRAIL_SAMPLES);
 	if (i < 0 || mVertexCount.empty())
 		return;
 	i = std::min(i, (int)mVertexCount.size() - 1);

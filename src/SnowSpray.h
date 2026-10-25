@@ -37,7 +37,9 @@ public:
 	bool build(const Spline& piste, const Terrain& terrain);	// contexte OpenGL requis
 
 	// À dessiner après le ciel (les particules transparentes se mélangent à l'image)
-	void draw(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& eye, float t);
+	// light : lumière des projecteurs là où est le skieur (les gerbes sont autour de lui)
+	void draw(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& eye, float t,
+	          const glm::vec3& light);
 
 private:
 	// Une particule = 3 vec4, qui deviennent 3 attributs d'instance du vertex shader

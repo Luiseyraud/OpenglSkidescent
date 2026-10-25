@@ -28,14 +28,24 @@ void buildNets(const Spline& piste, const Terrain& terrain, std::vector<Vertex>&
 // Drapeaux : une matrice model par drapeau
 std::vector<glm::mat4> placeFlags(const Spline& piste, const Terrain& terrain);
 
-// Pylônes d'éclairage : la matrice model du pylône, et le spot qu'il produit
+// Un faisceau : un groupe de projecteurs d'un pylône, réglés sur le même point.
+// C'est un spot dans le shader.
 struct Floodlight
 {
-	glm::mat4 model;
 	glm::vec3 position;		// d'où part la lumière (devant les projecteurs)
 	glm::vec3 direction;	// axe du faisceau (unitaire)
+	float power;			// puissance (multiplie FLOODLIGHT_COLOR)
+	float cosInner;			// cône du faisceau : plein jusqu'à cet angle (cosinus),
+	float cosOuter;			// éteint au-delà
 };
-std::vector<Floodlight> placeFloodlights(const Spline& piste, const Terrain& terrain);
+
+// Un pylône d'éclairage : sa matrice model et ses deux faisceaux (près et loin)
+struct LightMast
+{
+	glm::mat4 model;
+	Floodlight beams[2];
+};
+std::vector<LightMast> placeLightMasts(const Spline& piste, const Terrain& terrain);
 
 // Texture du filet, calculée pixel par pixel (RGBA, ligne 0 = bas de l'image)
 std::vector<unsigned char> netPixels(int& width, int& height);

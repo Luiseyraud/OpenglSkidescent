@@ -21,8 +21,8 @@ public:
 	void bind(GLuint texUnit = 0);
 	void unbind(GLuint texUnit = 0);
 
-	// CORRECTION : interdit la copie (le cours le faisait avec des fonctions privées
-	// vides, dont operator= qui ne renvoyait rien et causait un avertissement).
+	// CORRECTION : copie interdite avec "= delete", et non avec des fonctions privées
+	// vides (un operator= sans return provoque un avertissement).
 	Texture2D(const Texture2D& rhs) = delete;
 	Texture2D& operator = (const Texture2D& rhs) = delete;
 

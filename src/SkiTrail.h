@@ -4,7 +4,8 @@
 // Le trajet du skieur est connu d'avance (timeline::skierState). On construit
 // donc toute la trace une seule fois, au chargement : un ruban posé sur la
 // neige, avec deux sillons (un par ski), coupé pendant le saut. On note
-// l'instant où le skieur passe sur chaque section du ruban.
+// l'instant où le skieur passe sur chaque section du ruban (en temps du skieur,
+// voir le ralenti dans Timeline.h).
 // Pour dessiner l'image de l'instant t, on ne dessine que le début du ruban,
 // jusqu'à la section où se trouve le skieur. Aucun calcul par image, et la
 // même image en mode interactif, --frame et --record.

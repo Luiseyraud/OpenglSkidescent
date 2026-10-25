@@ -26,13 +26,19 @@ namespace scene
 	}
 
 	//--- Couleurs (linéaires : la correction gamma est faite à l'affichage) ----
+	// Rendu HDR (PostProcess) : les sources de lumière visibles (ampoules, vitres
+	// des projecteurs, frontale) sont bien plus claires que le blanc, et le bloom
+	// les fait rayonner.
+	const float BLOOM_STRENGTH      = 0.04f;	// part du bloom dans l'image finale
+	const float EMISSIVE_INTENSITY  = 6.0f;		// ampoules, guirlandes, vitres des projecteurs
+	const float HEADLAMP_EMISSIVE   = 25.0f;	// la frontale : une LED minuscule et très puissante
 	const glm::vec3 SUN_COLOR(1.0f, 0.65f, 0.35f);			// lumière du soleil couchant
-	const float     SUN_INTENSITY = 1.6f;
+	const float     SUN_INTENSITY = 0.4f;	// soleil voilé, très bas : les projecteurs éclairent la piste
 	const glm::vec3 SKY_ZENITH(0.06f, 0.13f, 0.32f);		// ciel en haut
 	const glm::vec3 SKY_HORIZON(0.50f, 0.42f, 0.52f);		// horizon loin du soleil
 	const glm::vec3 SKY_HORIZON_SUN(1.0f, 0.50f, 0.20f);	// horizon du côté du soleil
-	const glm::vec3 AMBIENT_SKY(0.10f, 0.14f, 0.26f);		// ambiante venant du ciel (bleutée)
-	const glm::vec3 AMBIENT_GROUND(0.10f, 0.08f, 0.08f);	// ambiante renvoyée par le sol
+	const glm::vec3 AMBIENT_SKY(0.05f, 0.07f, 0.13f);		// ambiante venant du ciel (bleutée, crépuscule)
+	const glm::vec3 AMBIENT_GROUND(0.04f, 0.035f, 0.035f);	// ambiante renvoyée par le sol
 	const float     FOG_DENSITY = 0.00045f;					// brouillard : 1 / distance caractéristique (m)
 
 	//--- Tracé de la piste (vu de dessus) -------------------------------------
@@ -54,7 +60,7 @@ namespace scene
 		{   0, 0,  210 },
 		{  50, 0,  280 },
 		{ 110, 0,  350 },
-		{ 120, 0,  420 }	// arrivée (le chalet sera près d'ici)
+		{ 120, 0,  420 }	// arrivée (le chalet est près d'ici)
 	};
 
 	const float PISTE_HALF_WIDTH = 15.0f;	// demi-largeur de la piste damée
@@ -152,7 +158,7 @@ namespace scene
 
 	inline const std::vector<glm::vec3> LAMP_POSTS = {
 		{ 100.0f, 0.0f, 405.0f },
-		{ 147.0f, 0.0f, 447.0f },		// (déplacé de (140, 428), où est maintenant la tribune est)
+		{ 147.0f, 0.0f, 447.0f },
 		{ 142.0f, 0.0f, 458.0f }
 	};
 	const float LAMP_BULB_HEIGHT = 3.8f;	// hauteur de l'ampoule du lampadaire (valeur du cours)
@@ -172,8 +178,11 @@ namespace scene
 	const float     HEADLAMP_INTENSITY = 3.0f;
 	// Positions relatives à l'objet (avant sa rotation) :
 	const glm::vec3 CHALET_LIGHT_OFFSET(0.0f, 2.2f, 5.5f);	// lampe devant la porte du chalet
-	const glm::vec3 HEADLAMP_OFFSET(0.0f, 1.05f, 0.25f);	// frontale : sur le casque du skieur
+	const glm::vec3 HEADLAMP_OFFSET(-0.015f, 1.07f, 0.245f);	// frontale : posée sur l'avant du casque (z = 0,225 à cette hauteur, mesuré sur le modèle)
 	const glm::vec3 HEADLAMP_DIRECTION(0.0f, -0.3f, 1.0f);	// vers l'avant, un peu vers le sol
+	const float HEADLAMP_BULB_SCALE    = 0.09f;	// la lampe visible : 4 cm (models/ampoule.obj fait 44 cm)
+	const float HEADLAMP_GLOW_SIZE     = 0.35f;	// m : demi-largeur de son halo (un point lumineux, pas un nuage)
+	const float HEADLAMP_GLOW_STRENGTH = 0.4f;
 
 	//--- Équipement de course, comme sur un super-G ------------------------------
 	// Distances mesurées depuis l'axe de la piste, perpendiculairement à elle.
@@ -206,24 +215,28 @@ namespace scene
 	const Color8 NET_POLE_COLOR     = { 50, 50, 55 };
 
 	// Pylônes d'éclairage (models/pylone.obj et projecteurs.obj) : par paires face
-	// à face, de part et d'autre de la piste. Chaque pylône est un spot dans le
-	// shader. Les deux pylônes d'une paire visent l'axe de la piste FLOODLIGHT_AIM
-	// mètres plus bas : comme sur les vraies pistes éclairées, la lumière va vers
-	// l'aval, pour ne pas éblouir les skieurs qui descendent.
-	const int   MAX_FLOODLIGHTS    = 16;		// comme MAX_FLOODLIGHTS dans shaders/scene.frag
-	const float FLOODLIGHT_FIRST   = 90.0f;		// m : position sur la piste de la première paire
-	const float FLOODLIGHT_SPACING = 120.0f;	// m entre deux paires
+	// à face, de part et d'autre de la piste. Chaque pylône a deux faisceaux (deux
+	// spots dans le shader) : l'un éclaire la piste en face, l'autre 30 m plus bas.
+	// Comme sur les vraies pistes éclairées, la lumière ne va pas vers l'amont, pour
+	// ne pas éblouir les skieurs qui descendent. Les taches de lumière se suivent
+	// tous les 30 m sur chaque bord et se chevauchent : la piste est éclairée sans
+	// trou du départ à l'arrivée.
+	const int   MAX_FLOODLIGHTS    = 72;		// faisceaux ; comme MAX_FLOODLIGHTS dans shaders/scene.frag
+	const float FLOODLIGHT_FIRST   = 0.0f;		// m : position sur la piste de la première paire (au départ)
+	const float FLOODLIGHT_SPACING = 60.0f;		// m entre deux paires
 	const float FLOODLIGHT_OFFSET  = 21.0f;		// m de l'axe : derrière les filets
-	const float FLOODLIGHT_AIM     = 25.0f;		// m
+	const float FLOODLIGHT_AIM_NEAR = 0.0f;	// m : un faisceau éclaire la piste en face du pylône,
+	const float FLOODLIGHT_AIM_FAR  = 30.0f;	// l'autre 30 m plus bas
+	const float FLOODLIGHT_POOL_RADIUS = 55.0f;	// m : rayon du faisceau à l'endroit visé
 	const glm::vec3 FLOODLIGHT_HEAD(0.6f, 13.2f, 0.0f);	// devant les 15 projecteurs (repère du modèle, ils regardent vers +X)
 	const glm::vec3 FLOODLIGHT_COLOR(0.80f, 0.90f, 1.0f);	// blanc froid (LED, ~6 000 K)
-	const float FLOODLIGHT_INTENSITY = 5.0f;
-	const float FLOODLIGHT_INNER_DEG = 8.0f;	// cône du faisceau : plein jusqu'à 8°,
-	const float FLOODLIGHT_OUTER_DEG = 30.0f;	// puis s'éteint progressivement jusqu'à 30°
-	const float FLOODLIGHT_QUADRATIC = 0.01f;	// atténuation 1 / (1 + 0.01 d²) : en 1/d² au loin, comme en vrai
+	const float FLOODLIGHT_INTENSITY = 0.3f;	// éclairement apporté par UN faisceau au point visé (les taches se
+	                                            // recouvrent : ~0,5 en moyenne sur la piste ; le soleil donne 0,07)
+	const float FLOODLIGHT_INNER_RATIO = 0.6f;	// le faisceau est plein jusqu'à 60 % de son angle, puis s'éteint
+	const float FLOODLIGHT_QUADRATIC = 0.001f;	// atténuation 1 / (1 + 0.001 d²) : longue portée, en 1/d² seulement au-delà de ~30 m
 	const glm::vec3 FLOODLIGHT_LENS_COLOR(0.92f, 0.96f, 1.0f);	// les vitres des projecteurs, allumées
 	const float FLOODLIGHT_GLOW_SIZE     = 5.0f;	// m : demi-largeur du halo (Glow.h)
-	const float FLOODLIGHT_GLOW_STRENGTH = 1.0f;
+	const float FLOODLIGHT_GLOW_STRENGTH = 0.5f;	// le bloom fait déjà rayonner les vitres
 
 	//--- Tribunes de l'arrivée, public et guirlandes --------------------------------
 	// Deux tribunes (models/tribune.obj + models/siege.obj aux places de
@@ -265,6 +278,12 @@ namespace scene
 	const int   SPRAY_LANDING    = 90;		// particules d'un coup, à la réception du saut
 	const float SPRAY_DRAG       = 2.5f;	// 1/s : l'air freine vite la poussière de neige
 	const float SPRAY_SETTLE     = 1.2f;	// m/s² : elle retombe lentement
+	const float SPRAY_FORWARD_SCATTER = 10.0f;	// diffusion vers l'avant : la poussière brille à contre-jour
+
+	// Neige qui tombe (Snowfall.h)
+	const int       SNOWFALL_COUNT = 60000;					// flocons
+	const glm::vec3 SNOWFALL_BOX(60.0f, 30.0f, 60.0f);		// m : la boîte qui suit la caméra
+	const glm::vec3 SNOWFALL_WIND(0.5f, 0.0f, 0.3f);		// m/s
 
 	//--- Décor : sapins et rochers, placés au hasard (graine fixe) --------------
 	const unsigned DECOR_SEED = 2026;	// même graine -> toujours le même décor
@@ -276,7 +295,7 @@ namespace scene
 	const int   ROCK_COUNT = 250;
 	const float ROCK_MIN_SIZE = 0.8f, ROCK_MAX_SIZE = 4.0f;
 
-	//--- Vue d'ensemble (provisoire, avant la caméra animée) -------------------
+	//--- Vue d'ensemble : point de départ de la caméra libre (mode interactif) --
 	const glm::vec3 OVERVIEW_EYE(650.0f, 600.0f, 550.0f);
 	const glm::vec3 OVERVIEW_TARGET(0.0f, 150.0f, -250.0f);
 }

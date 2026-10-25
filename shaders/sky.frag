@@ -36,9 +36,11 @@ void main()
 
 	// Disque du soleil et halo autour. d = cosinus de l'angle entre dir et le soleil.
 	float d = dot(dir, sky.sunDir);
-	color += sunColor * (smoothstep(0.9995, 0.9998, d) * 20.0	// disque
+	color += sunColor * (smoothstep(0.9995, 0.9998, d) * 5.0	// disque
 	                   + pow(max(d, 0.0), 200.0) * 2.0);			// halo
 
-	// Correction gamma, comme pour la scène
-	frag_color = vec4(pow(color, vec3(1.0 / 2.2)), 1.0);
+	// Couleur linéaire HDR : le disque du soleil vaut ~5, plus que le blanc, et le
+	// bloom le fait rayonner. Plus fort, son éblouissement noierait la silhouette du
+	// skieur à contre-jour. (Gamma : voir tonemap.frag)
+	frag_color = vec4(color, 1.0);
 }

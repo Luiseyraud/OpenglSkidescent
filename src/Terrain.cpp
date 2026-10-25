@@ -318,11 +318,11 @@ float Terrain::jumpHeight(float u, float base) const
 	if (u > mTableEnd)
 		y += mLandingSlope * (u - mTableEnd);
 
-	// CORRECTION : après l'impact, la zone de réception redescend en douceur jusqu'à
-	// la piste. Sans cela, elle restait au-dessus de la piste (la table est
-	// horizontale alors que la piste descend) : une longue bosse de neige au milieu
-	// de la piste, jusqu'à z = 430 environ. smoothstep garde la pente de réception
-	// au point d'impact, puis la rend plus raide, puis la ramène à celle de la piste.
+	// Après l'impact, la zone de réception redescend en douceur jusqu'à la piste.
+	// Sinon, elle resterait au-dessus (la table est horizontale alors que la piste
+	// descend) : une longue bosse de neige au milieu de la piste. smoothstep garde
+	// la pente de réception au point d'impact, puis la rend plus raide, puis la
+	// ramène à celle de la piste.
 	if (u > mLandingU)
 		y = glm::mix(y, base, glm::smoothstep(mLandingU, mJumpEnd, u));
 

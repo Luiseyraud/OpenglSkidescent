@@ -113,8 +113,8 @@ bool SnowSpray::build(const Spline& piste, const Terrain& terrain)
 
 	for (int i = 0; i <= steps; i++)
 	{
-		float t = timeline::SKI_START + i * DT;
-		timeline::SkierState skier = timeline::skierState(t, piste, terrain);
+		float t = timeline::SKI_START + i * DT;		// temps du skieur (voir le ralenti, Timeline.h)
+		timeline::SkierState skier = timeline::skierStateAt(t, piste, terrain);
 		float deceleration = (previousSpeed - skier.speed) / DT;
 		previousSpeed = skier.speed;
 		if (skier.flying)
@@ -209,7 +209,8 @@ bool SnowSpray::build(const Spline& piste, const Terrain& terrain)
 //-----------------------------------------------------------------------------
 // Dessine les particules vivantes à l'instant t
 //-----------------------------------------------------------------------------
-void SnowSpray::draw(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& eye, float t)
+void SnowSpray::draw(const glm::mat4& view, const glm::mat4& projection, const glm::vec3& eye, float t,
+                     const glm::vec3& light)
 {
 	if (mCount == 0)
 		return;
@@ -217,13 +218,15 @@ void SnowSpray::draw(const glm::mat4& view, const glm::mat4& projection, const g
 	mShader.use();
 	mShader.setUniform("view", view);
 	mShader.setUniform("projection", projection);
-	mShader.setUniform("time", t);
+	mShader.setUniform("time", timeline::simTime(t));	// les gerbes suivent le temps du skieur : ralenties pendant le saut
 	mShader.setUniform("drag", SPRAY_DRAG);
 	mShader.setUniform("settle", SPRAY_SETTLE);
 	mShader.setUniform("eye", eye);
 	mShader.setUniform("sunDir", sunDirection());
 	mShader.setUniform("sunColor", SUN_COLOR * SUN_INTENSITY);
 	mShader.setUniform("ambient", AMBIENT_SKY);
+	mShader.setUniform("localLight", light);
+	mShader.setUniform("scatter", SPRAY_FORWARD_SCATTER);
 	mShader.setUniformSampler("sheet", 0);
 	mSheet.bind(0);
 

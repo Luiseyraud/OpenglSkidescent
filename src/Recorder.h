@@ -1,12 +1,10 @@
 //-----------------------------------------------------------------------------
 // Recorder.h : rendu hors écran et sauvegarde des images.
 //
-// On dessine dans un framebuffer (FBO) au lieu de la fenêtre : la taille de
-// l'image (1920x1080) ne dépend donc pas de la fenêtre, qui peut même être cachée.
-//
-// Anticrénelage MSAA 4x : le FBO de dessin garde 4 échantillons par pixel. On ne
-// peut pas le lire directement : on le "résout" d'abord (moyenne des 4 échantillons)
-// dans un second FBO normal, avec glBlitFramebuffer.
+// L'image finale (après bloom et tone mapping, voir PostProcess) est dessinée
+// dans un framebuffer (FBO) au lieu de la fenêtre : sa taille (1920x1080) ne
+// dépend donc pas de la fenêtre, qui peut même être cachée. On la lit ensuite
+// avec glReadPixels, pour la vidéo ou une image PNG.
 //-----------------------------------------------------------------------------
 #ifndef RECORDER_H
 #define RECORDER_H
@@ -22,23 +20,17 @@ public:
 	Recorder(int width, int height);	// contexte OpenGL requis
 	~Recorder();
 
-	void begin();	// les dessins suivants vont dans l'image hors écran
-	void end();		// résout le MSAA, puis retour au dessin dans la fenêtre
-	void readPixels(std::vector<unsigned char>& pixels);	// image résolue, en RGB, de bas en haut
+	GLuint framebuffer() const { return mFBO; }			// où dessiner l'image finale
+	void readPixels(std::vector<unsigned char>& pixels);	// l'image, en RGB, de bas en haut
 	bool savePNG(const std::string& filename);
 
 	int width() const  { return mWidth; }
 	int height() const { return mHeight; }
 
 private:
-	static const int SAMPLES = 4;	// échantillons par pixel (MSAA)
-
 	int mWidth, mHeight;
-	GLuint mFBO;			// le framebuffer de dessin (multi-échantillons)
-	GLuint mColorBuffer;	// son image couleur
-	GLuint mDepthBuffer;	// son tampon de profondeur
-	GLuint mResolveFBO;		// le framebuffer résolu (1 échantillon), celui qu'on lit
-	GLuint mResolveBuffer;	// son image couleur
+	GLuint mFBO;			// le framebuffer de l'image finale
+	GLuint mColorBuffer;	// son image couleur (8 bits par composante)
 };
 
 #endif // RECORDER_H

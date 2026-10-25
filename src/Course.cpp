@@ -1,5 +1,5 @@
 //-----------------------------------------------------------------------------
-// Course.cpp : bandes bleues, filets et drapeaux le long de la piste
+// Course.cpp : bandes bleues, filets, drapeaux et pylônes d'éclairage le long de la piste
 //-----------------------------------------------------------------------------
 #include "Course.h"
 #include "Scene.h"
@@ -250,34 +250,54 @@ std::vector<glm::mat4> placeFlags(const Spline& piste, const Terrain& terrain)
 }
 
 //-----------------------------------------------------------------------------
-// Pylônes d'éclairage : une paire tous les FLOODLIGHT_SPACING mètres. Chaque
-// pylône est tourné vers le point de la piste qu'il éclaire (comme un vrai
-// projecteur de stade, orienté à l'installation).
+// Pylônes d'éclairage : une paire tous les FLOODLIGHT_SPACING mètres. Les
+// 15 projecteurs d'un pylône sont réglés en deux groupes (deux faisceaux) : l'un
+// éclaire la piste en face (FLOODLIGHT_AIM_NEAR), l'autre plus bas
+// (FLOODLIGHT_AIM_FAR). Chaque bord de la piste a ainsi une tache tous les 30 m.
+// Le pylône est tourné vers le milieu de ses deux points visés.
+//
+// Pour que toutes les taches se ressemblent (même taille, même luminosité),
+// chaque faisceau est réglé selon sa distance d au point visé :
+//  - son cône a pour demi-angle atan(R / d) : un rayon R à l'endroit visé ;
+//  - sa puissance est FLOODLIGHT_INTENSITY x (1 + k d²) : elle compense
+//    exactement l'atténuation 1 / (1 + k d²) du shader au point visé.
+// Le faisceau qui vise loin est donc plus étroit et plus puissant.
 //-----------------------------------------------------------------------------
-std::vector<Floodlight> placeFloodlights(const Spline& piste, const Terrain& terrain)
+std::vector<LightMast> placeLightMasts(const Spline& piste, const Terrain& terrain)
 {
-	std::vector<Floodlight> lights;
+	std::vector<LightMast> masts;
 	for (float s = FLOODLIGHT_FIRST; s < piste.length(); s += FLOODLIGHT_SPACING)
 		for (float side : { 1.0f, -1.0f })
 		{
 			glm::vec3 base = sidePoint(piste, terrain, s, side * FLOODLIGHT_OFFSET);
 
-			// Point visé : sur l'axe de la piste, FLOODLIGHT_AIM mètres plus bas
-			glm::vec3 target = sidePoint(piste, terrain, s + FLOODLIGHT_AIM, 0.0f);
+			// Points visés : sur l'axe de la piste, en face et plus bas
+			glm::vec3 targets[2] = { sidePoint(piste, terrain, s + FLOODLIGHT_AIM_NEAR, 0.0f),
+			                         sidePoint(piste, terrain, s + FLOODLIGHT_AIM_FAR, 0.0f) };
 
-			// Rotation autour de Y : l'avant du modèle (+X) regarde vers le point visé.
-			// rotate(angle, Y) envoie (1, 0, 0) sur (cos angle, 0, -sin angle).
-			glm::vec3 facing = target - base;
+			// Rotation autour de Y : l'avant du modèle (+X) regarde vers le milieu des
+			// deux points visés. rotate(angle, Y) envoie (1, 0, 0) sur (cos angle, 0, -sin angle).
+			glm::vec3 facing = 0.5f * (targets[0] + targets[1]) - base;
 			float angle = std::atan2(-facing.z, facing.x);
 
-			Floodlight light;
-			light.model = glm::translate(glm::mat4(1.0f), base - glm::vec3(0.0f, 0.3f, 0.0f))	// enfoncé de 30 cm
-			            * glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0.0f, 1.0f, 0.0f));
-			light.position = glm::vec3(light.model * glm::vec4(FLOODLIGHT_HEAD, 1.0f));
-			light.direction = glm::normalize(target - light.position);
-			lights.push_back(light);
+			LightMast mast;
+			mast.model = glm::translate(glm::mat4(1.0f), base - glm::vec3(0.0f, 0.3f, 0.0f))	// enfoncé de 30 cm
+			           * glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0.0f, 1.0f, 0.0f));
+			for (int k = 0; k < 2; k++)
+			{
+				Floodlight& beam = mast.beams[k];
+				beam.position = glm::vec3(mast.model * glm::vec4(FLOODLIGHT_HEAD, 1.0f));
+				beam.direction = glm::normalize(targets[k] - beam.position);
+
+				float d = glm::length(targets[k] - beam.position);
+				float outer = std::atan(FLOODLIGHT_POOL_RADIUS / d);
+				beam.cosOuter = std::cos(outer);
+				beam.cosInner = std::cos(FLOODLIGHT_INNER_RATIO * outer);
+				beam.power = FLOODLIGHT_INTENSITY * (1.0f + FLOODLIGHT_QUADRATIC * d * d);
+			}
+			masts.push_back(mast);
 		}
-	return lights;
+	return masts;
 }
 
 //-----------------------------------------------------------------------------

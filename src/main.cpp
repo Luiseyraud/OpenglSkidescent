@@ -6,7 +6,7 @@
 //   ./skieur --frame <t> <image.png>      rend l'instant t (en s) dans une image 1920x1080
 //   ./skieur --frame <t> <image.png> x y z cx cy cz
 //                                         idem, vu depuis (x,y,z) vers (cx,cy,cz)
-//   ./skieur --record <video.mp4>         rend toute la vidéo (60 s à 60 images/s)
+//   ./skieur --record <video.mp4>         rend toute la vidéo (60 images/s)
 //
 // Mode interactif :
 //   C            caméra animée (storyboard) / caméra libre
@@ -39,6 +39,7 @@
 #include "World.h"
 #include "Timeline.h"
 #include "Recorder.h"
+#include "PostProcess.h"
 
 
 // Global Variables
@@ -165,11 +166,12 @@ void renderAt(World& world, float t, float aspect)
 int renderFrame(float t, const std::string& filename, bool customView, glm::vec3 eye, glm::vec3 target)
 {
 	World world;
-	if (!world.load())
+	PostProcess post;
+	if (!world.load() || !post.load())
 		return 1;
 
 	Recorder recorder(FRAME_WIDTH, FRAME_HEIGHT);
-	recorder.begin();
+	post.begin(FRAME_WIDTH, FRAME_HEIGHT);
 	if (customView)		// vue imposée sur la ligne de commande
 	{
 		glm::mat4 view = glm::lookAt(eye, target, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -178,7 +180,7 @@ int renderFrame(float t, const std::string& filename, bool customView, glm::vec3
 	}
 	else				// caméra du storyboard
 		renderAt(world, t, (float)FRAME_WIDTH / FRAME_HEIGHT);
-	recorder.end();
+	post.end(recorder.framebuffer());
 
 	if (!recorder.savePNG(filename))
 		return 1;
@@ -194,7 +196,8 @@ int renderFrame(float t, const std::string& filename, bool customView, glm::vec3
 int recordVideo(const std::string& filename)
 {
 	World world;
-	if (!world.load())
+	PostProcess post;
+	if (!world.load() || !post.load())
 		return 1;
 
 	// ffmpeg lit des images brutes RGB sur son entrée standard ("-i -").
@@ -211,16 +214,16 @@ int recordVideo(const std::string& filename)
 
 	Recorder recorder(FRAME_WIDTH, FRAME_HEIGHT);
 	std::vector<unsigned char> pixels;
-	int frameCount = (int)(timeline::DURATION * FPS);
+	int frameCount = (int)(timeline::duration() * FPS);
 	double start = glfwGetTime();
 
 	for (int frame = 0; frame < frameCount; frame++)
 	{
 		float t = (float)frame / FPS;	// temps fixe : ne dépend pas de la vitesse de calcul
 
-		recorder.begin();
+		post.begin(FRAME_WIDTH, FRAME_HEIGHT);
 		renderAt(world, t, (float)FRAME_WIDTH / FRAME_HEIGHT);
-		recorder.end();
+		post.end(recorder.framebuffer());
 		recorder.readPixels(pixels);
 		fwrite(pixels.data(), 1, pixels.size(), ffmpeg);
 
@@ -243,7 +246,8 @@ int recordVideo(const std::string& filename)
 int runInteractive()
 {
 	World world;
-	if (!world.load())
+	PostProcess post;
+	if (!world.load() || !post.load())
 		return 1;
 
 	double lastTime = glfwGetTime();
@@ -262,8 +266,12 @@ int runInteractive()
 
 		// Le temps du storyboard avance en temps réel pendant la lecture (et boucle)
 		if (gPlaying)
-			gTime = std::fmod(gTime + (float)deltaTime, timeline::DURATION);
+			gTime = std::fmod(gTime + (float)deltaTime, timeline::duration());
 
+		// La scène va dans l'image HDR, puis bloom et tone mapping vers la fenêtre
+		int width, height;
+		glfwGetFramebufferSize(gWindow, &width, &height);
+		post.begin(width, height);
 		float aspect = (float)gWindowWidth / (float)gWindowHeight;
 		if (gAnimatedCamera)
 			renderAt(world, gTime, aspect);
@@ -273,6 +281,7 @@ int runInteractive()
 			glm::mat4 projection = glm::perspective(glm::radians(fpsCamera.getFOV()), aspect, NEAR_PLANE, FAR_PLANE);
 			world.render(view, projection, fpsCamera.getPosition(), gTime);
 		}
+		post.end(0);
 
 		// Swap front and back buffers
 		glfwSwapBuffers(gWindow);
@@ -302,7 +311,6 @@ bool initOpenGL(bool visible)
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 	glfwWindowHint(GLFW_VISIBLE, visible ? GLFW_TRUE : GLFW_FALSE);
-	glfwWindowHint(GLFW_SAMPLES, 4);	// MSAA 4x pour la fenêtre (le mode --frame a son propre MSAA)
 
 	// Create an OpenGL 3.3 core, forward compatible context window
 	gWindow = glfwCreateWindow(gWindowWidth, gWindowHeight, APP_TITLE, NULL, NULL);
@@ -392,7 +400,7 @@ void glfw_onKey(GLFWwindow* window, int key, int scancode, int action, int mode)
 	if (key == GLFW_KEY_SPACE && action == GLFW_PRESS)
 		gPlaying = !gPlaying;
 	if (key == GLFW_KEY_RIGHT && (action == GLFW_PRESS || action == GLFW_REPEAT))
-		gTime = std::min(gTime + 2.0f, timeline::DURATION - 0.01f);
+		gTime = std::min(gTime + 2.0f, timeline::duration() - 0.01f);
 	if (key == GLFW_KEY_LEFT && (action == GLFW_PRESS || action == GLFW_REPEAT))
 		gTime = std::max(gTime - 2.0f, 0.0f);
 }

@@ -62,8 +62,8 @@ bool Texture2D::loadTexture(const string& fileName, bool generateMipMaps)
 		}
 	}
 
-	// AJOUT : l'envoi à OpenGL est maintenant dans createFromPixels (aussi utilisé
-	// pour les textures calculées par le code)
+	// AJOUT : l'envoi à OpenGL se fait dans createFromPixels, qui sert aussi aux
+	// textures calculées par le code
 	bool ok = createFromPixels(width, height, imageData, generateMipMaps);
 	stbi_image_free(imageData);
 	return ok;
@@ -88,7 +88,7 @@ bool Texture2D::createFromPixels(int width, int height, const unsigned char* rgb
 	// GL_NEAREST
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	// CORRECTION : avec GL_LINEAR, les mipmaps n'étaient jamais utilisées (scintillement au loin)
+	// CORRECTION : GL_LINEAR_MIPMAP_LINEAR. Avec GL_LINEAR, les mipmaps ne servent pas (scintillement au loin)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, generateMipMaps ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 

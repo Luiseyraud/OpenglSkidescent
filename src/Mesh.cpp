@@ -37,7 +37,7 @@ std::vector<std::string> split(std::string s, std::string t)
 // Constructor
 //-----------------------------------------------------------------------------
 Mesh::Mesh()
-	:mLoaded(false), mVBO(0), mVAO(0), mInstanceVBO(0), mInstanceCount(0)	// CORRECTION : VBO et VAO n'étaient pas initialisés
+	:mLoaded(false), mVBO(0), mVAO(0), mInstanceVBO(0), mInstanceCount(0)	// CORRECTION : VBO et VAO initialisés à 0
 {
 }
 
@@ -132,8 +132,8 @@ bool Mesh::loadOBJ(const std::string& filename)
 						vertexIndices.push_back(vertexIndex);
 					}
 
-					// CORRECTION : le cours testait "data.size() >= 1", ce qui lisait data[1]
-					// hors limites pour une face "f 1 2 3" (sans '/'). data[1] existe si size > 1.
+					// CORRECTION : data[1] n'existe que si size > 1 (le test "size() >= 1" du
+					// cours lit hors limites pour une face "f 1 2 3", sans '/').
 					if (data.size() > 1)
 					{
 						// Is face format v//vn?  If data[1] is empty string then

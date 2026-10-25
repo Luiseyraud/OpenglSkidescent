@@ -19,6 +19,7 @@
 #include "SnowSpray.h"
 #include "Stands.h"
 #include "Crowd.h"
+#include "Snowfall.h"
 
 class World
 {
@@ -36,14 +37,17 @@ private:
 	glm::mat4 onGround(const glm::vec3& position, float angleDeg) const;
 	void drawObject(Mesh& mesh, Texture2D& texture, const glm::mat4& model, float specular, float shininess);
 	void drawInstances(Mesh& mesh, Texture2D& texture, float specular, float shininess);
+	glm::vec3 floodlightAt(const glm::vec3& point) const;
 
 	Sky sky;
 	Glow glow;					// halos des projecteurs
 	SkiTrail trail;				// trace des skis
 	SnowSpray spray;			// gerbes de neige
-	ShaderProgram shader;		// la scène : Blinn-Phong, brouillard, gamma
+	Snowfall snowfall;			// neige qui tombe
+	ShaderProgram shader;		// la scène : Blinn-Phong, brouillard
 	ShaderProgram bulbShader;	// les ampoules : couleur unie (shader du cours)
 	ShaderProgram crowdShader;	// le public : crowd.vert (animation) + scene.frag (éclairage)
+	ShaderProgram snowShader;	// la neige qui tombe : snow.vert (position, lumière) + snow.frag
 
 	Texture2D snowTexture;
 	Mesh chalet;	Texture2D chaletTexture;
@@ -60,7 +64,8 @@ private:
 	Mesh flag;		Texture2D flagTexture;		// drapeaux
 	Mesh pylon;		Texture2D pylonTexture;		// pylônes d'éclairage (mât et boîtiers)
 	Mesh lenses;								// vitres des projecteurs, dessinées allumées
-	std::vector<Floodlight> floodlights;
+	std::vector<LightMast> masts;				// pylônes d'éclairage
+	std::vector<Floodlight> floodlights;		// tous leurs faisceaux (2 par pylône)
 
 	// Tribunes de l'arrivée (Stands.h) et public (Crowd.h)
 	Stands stands;

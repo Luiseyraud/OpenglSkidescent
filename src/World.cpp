@@ -23,8 +23,13 @@ bool World::load()
 		return false;
 	if (!crowdShader.loadShaders("shaders/crowd.vert", "shaders/scene.frag"))
 		return false;
+	if (!snowShader.loadShaders("shaders/snow.vert", "shaders/snow.frag"))
+		return false;
 	if (!sky.load() || !glow.load())
 		return false;
+
+	// Le ralenti du saut (Timeline.h) : à calculer avant tout ce qui suit le skieur
+	timeline::prepare(terrain);
 
 	double start = glfwGetTime();
 	if (!terrain.buildMesh())
@@ -45,18 +50,19 @@ bool World::load()
 		return false;
 
 	// Pylônes d'éclairage : placés avant le décor, qui doit laisser leur pied libre
-	floodlights = placeFloodlights(piste, terrain);
-	if ((int)floodlights.size() > MAX_FLOODLIGHTS)
-	{
-		std::cerr << "Trop de pylônes : " << floodlights.size() << " (le shader en accepte " << MAX_FLOODLIGHTS << ")" << std::endl;
-		floodlights.resize(MAX_FLOODLIGHTS);
-	}
+	masts = placeLightMasts(piste, terrain);
 	std::vector<glm::vec3> pylonFeet;
 	std::vector<glm::mat4> pylonModels;
-	for (const Floodlight& light : floodlights)
+	for (const LightMast& mast : masts)
 	{
-		pylonFeet.push_back(glm::vec3(light.model[3]));		// 4e colonne de la matrice : la translation
-		pylonModels.push_back(light.model);
+		pylonFeet.push_back(glm::vec3(mast.model[3]));		// 4e colonne de la matrice : la translation
+		pylonModels.push_back(mast.model);
+		floodlights.insert(floodlights.end(), { mast.beams[0], mast.beams[1] });
+	}
+	if ((int)floodlights.size() > MAX_FLOODLIGHTS)
+	{
+		std::cerr << "Trop de faisceaux : " << floodlights.size() << " (le shader en accepte " << MAX_FLOODLIGHTS << ")" << std::endl;
+		floodlights.resize(MAX_FLOODLIGHTS);
 	}
 
 	// Décor : positions des sapins et des rochers, envoyées une fois pour toutes
@@ -90,7 +96,7 @@ bool World::load()
 
 	// Effets de neige : la trace et les gerbes sont calculées une fois pour toute la
 	// vidéo, à partir du trajet du skieur
-	if (!trail.build(piste, terrain) || !spray.build(piste, terrain))
+	if (!trail.build(piste, terrain) || !spray.build(piste, terrain) || !snowfall.build())
 		return false;
 	std::cout << "Piste : " << flags.size() << " drapeaux, " << poleVertices.size() / 30 << " poteaux de filet" << std::endl;
 
@@ -115,18 +121,19 @@ bool World::load()
 		return false;
 
 	// Le public se lève quand le skieur arrive à CHEER_DISTANCE mètres de l'arrivée
-	for (float t = 0.0f; t < timeline::DURATION; t += 0.01f)
+	for (float t = 0.0f; t < timeline::duration(); t += 0.01f)
 		if (timeline::skierDistance(t, piste) >= piste.length() - CHEER_DISTANCE)
 		{
 			cheerTime = t;
 			break;
 		}
 
-	// Halos : les projecteurs (forts dans leur faisceau), puis les ampoules des guirlandes
-	for (const Floodlight& light : floodlights)
-		glowSources.push_back({ light.position, light.direction, FLOODLIGHT_COLOR * FLOODLIGHT_GLOW_STRENGTH, FLOODLIGHT_GLOW_SIZE });
+	// Halos : un par pylône (fort quand on est dans ses faisceaux), puis les ampoules des guirlandes
+	for (const LightMast& mast : masts)
+		glowSources.push_back({ mast.beams[0].position, glm::normalize(mast.beams[0].direction + mast.beams[1].direction),
+		                        FLOODLIGHT_COLOR * FLOODLIGHT_GLOW_STRENGTH, FLOODLIGHT_GLOW_SIZE });
 	for (const glm::vec3& b : stands.bulbs)
-		glowSources.push_back({ b, glm::vec3(0.0f), GARLAND_COLOR * 0.5f, 0.35f });
+		glowSources.push_back({ b, glm::vec3(0.0f), GARLAND_COLOR * 0.25f, 0.35f });
 
 	return true;
 }
@@ -174,7 +181,7 @@ void World::setLights(ShaderProgram& program, const glm::mat4& skierModel)
 	// Soleil : chaud et rasant. Le shader attend -L.
 	program.setUniform("sunLight.direction", -sunDirection());
 	program.setUniform("sunLight.diffuse", SUN_COLOR * SUN_INTENSITY);
-	program.setUniform("sunLight.specular", SUN_COLOR * 0.3f);
+	program.setUniform("sunLight.specular", SUN_COLOR * SUN_INTENSITY * 0.2f);
 
 	// Ponctuelles : les ampoules des 3 lampadaires et la lampe du chalet, avec une
 	// atténuation 1 / (1 + 0.09 d + 0.032 d²) (portée d'une cinquantaine de mètres) ;
@@ -216,22 +223,40 @@ void World::setLights(ShaderProgram& program, const glm::mat4& skierModel)
 	program.setUniform("spotLight.exponent", 0.0075f);
 	program.setUniform("spotLight.on", 1);
 
-	// Spots : les projecteurs des pylônes. Atténuation 1 / (1 + 0.01 d²) : en 1/d²
-	// au loin, comme une vraie lumière (le 1 évite la division par 0 tout près).
+	// Spots : les projecteurs des pylônes. Atténuation 1 / (1 + FLOODLIGHT_QUADRATIC d²) :
+	// en 1/d² au loin, comme une vraie lumière (le 1 évite la division par 0 tout près).
+	// Puissance et cône propres à chaque faisceau (voir placeLightMasts).
 	program.setUniform("floodLightCount", (int)floodlights.size());
 	for (size_t i = 0; i < floodlights.size(); i++)
 	{
 		std::string light = "floodLights[" + std::to_string(i) + "].";
 		program.setUniform((light + "position").c_str(), floodlights[i].position);
 		program.setUniform((light + "direction").c_str(), floodlights[i].direction);
-		program.setUniform((light + "diffuse").c_str(), FLOODLIGHT_COLOR * FLOODLIGHT_INTENSITY);
-		program.setUniform((light + "specular").c_str(), FLOODLIGHT_COLOR * FLOODLIGHT_INTENSITY);
-		program.setUniform((light + "cosInnerCone").c_str(), glm::cos(glm::radians(FLOODLIGHT_INNER_DEG)));
-		program.setUniform((light + "cosOuterCone").c_str(), glm::cos(glm::radians(FLOODLIGHT_OUTER_DEG)));
+		program.setUniform((light + "diffuse").c_str(), FLOODLIGHT_COLOR * floodlights[i].power);
+		program.setUniform((light + "specular").c_str(), FLOODLIGHT_COLOR * floodlights[i].power);
+		program.setUniform((light + "cosInnerCone").c_str(), floodlights[i].cosInner);
+		program.setUniform((light + "cosOuterCone").c_str(), floodlights[i].cosOuter);
 		program.setUniform((light + "constant").c_str(), 1.0f);
 		program.setUniform((light + "linear").c_str(), 0.0f);
 		program.setUniform((light + "exponent").c_str(), FLOODLIGHT_QUADRATIC);
 	}
+}
+
+//-----------------------------------------------------------------------------
+// Lumière des projecteurs reçue en un point (même calcul que le shader, sans
+// l'orientation de la surface) : sert à éclairer les gerbes de neige
+//-----------------------------------------------------------------------------
+glm::vec3 World::floodlightAt(const glm::vec3& point) const
+{
+	glm::vec3 total(0.0f);
+	for (const Floodlight& light : floodlights)
+	{
+		glm::vec3 toPoint = point - light.position;
+		float d = glm::length(toPoint);
+		float spot = glm::smoothstep(light.cosOuter, light.cosInner, glm::dot(toPoint / d, light.direction));
+		total += FLOODLIGHT_COLOR * light.power * spot / (1.0f + FLOODLIGHT_QUADRATIC * d * d);
+	}
+	return total;
 }
 
 //-----------------------------------------------------------------------------
@@ -346,7 +371,7 @@ void World::render(const glm::mat4& view, const glm::mat4& projection, const glm
 	bulbShader.use();
 	bulbShader.setUniform("view", view);
 	bulbShader.setUniform("projection", projection);
-	bulbShader.setUniform("lightColor", glm::vec3(1.0f, 0.85f, 0.6f));
+	bulbShader.setUniform("lightColor", glm::vec3(1.0f, 0.85f, 0.6f) * EMISSIVE_INTENSITY);
 	for (const glm::vec3& lamp : LAMP_POSTS)
 	{
 		glm::mat4 model = glm::translate(onGround(lamp, 0.0f), glm::vec3(0.0f, LAMP_BULB_HEIGHT, 0.0f));
@@ -356,15 +381,23 @@ void World::render(const glm::mat4& view, const glm::mat4& projection, const glm
 
 	// Vitres des projecteurs : allumées, donc d'une couleur unie très claire, sans
 	// éclairage (même shader que les ampoules)
-	bulbShader.setUniform("lightColor", FLOODLIGHT_LENS_COLOR);
-	for (const Floodlight& light : floodlights)
+	bulbShader.setUniform("lightColor", FLOODLIGHT_LENS_COLOR * EMISSIVE_INTENSITY);
+	for (const LightMast& mast : masts)
 	{
-		bulbShader.setUniform("model", light.model);
+		bulbShader.setUniform("model", mast.model);
 		lenses.draw();
 	}
 
+	// La frontale : une petite lampe très claire à l'avant du casque (mêmes position et
+	// direction que le spot de la frontale, voir setLights)
+	glm::vec3 headPos = glm::vec3(skierModel * glm::vec4(HEADLAMP_OFFSET, 1.0f));
+	glm::vec3 headDir = glm::normalize(glm::vec3(skierModel * glm::vec4(HEADLAMP_DIRECTION, 0.0f)));
+	bulbShader.setUniform("lightColor", glm::vec3(HEADLAMP_EMISSIVE));
+	bulbShader.setUniform("model", glm::scale(glm::translate(glm::mat4(1.0f), headPos), glm::vec3(HEADLAMP_BULB_SCALE)));
+	bulb.draw();
+
 	// Ampoules des guirlandes
-	bulbShader.setUniform("lightColor", glm::vec3(1.0f, 0.88f, 0.65f));
+	bulbShader.setUniform("lightColor", glm::vec3(1.0f, 0.88f, 0.65f) * EMISSIVE_INTENSITY);
 	for (const glm::vec3& b : stands.bulbs)
 	{
 		bulbShader.setUniform("model", glm::scale(glm::translate(glm::mat4(1.0f), b), glm::vec3(GARLAND_BULB_SCALE)));
@@ -374,9 +407,20 @@ void World::render(const glm::mat4& view, const glm::mat4& projection, const glm
 	// Le ciel : il ne remplit que les pixels où rien n'a été dessiné
 	sky.draw(view, projection);
 
-	// Les gerbes de neige, transparentes : après le ciel, pour se mélanger à l'image complète
-	spray.draw(view, projection, eye, t);
+	// La neige qui tombe : même éclairage que la scène, et le temps du skieur (elle
+	// ralentit pendant le saut). pixelScale : taille en pixels d'un objet de 1 m à 1 m
+	// = hauteur de l'image / (2 tan(fov / 2)), et projection[1][1] = 1 / tan(fov / 2).
+	GLint viewport[4];
+	glGetIntegerv(GL_VIEWPORT, viewport);
+	prepareShader(snowShader, view, projection, eye, skierModel);
+	snowfall.draw(snowShader, timeline::simTime(t), projection[1][1] * viewport[3] / 2.0f);
 
-	// Les halos des projecteurs et des ampoules en tout dernier : ils s'ajoutent à l'image finie
-	glow.draw(view, projection, eye, glowSources);
+	// Les gerbes de neige, transparentes : après le ciel, pour se mélanger à l'image complète
+	spray.draw(view, projection, eye, t, floodlightAt(skierState.position));
+
+	// Les halos des projecteurs, des ampoules et de la frontale en tout dernier : ils
+	// s'ajoutent à l'image finie. La frontale bouge : son halo est ajouté à chaque image.
+	std::vector<GlowSource> sources = glowSources;
+	sources.push_back({ headPos, headDir, HEADLAMP_COLOR * HEADLAMP_GLOW_STRENGTH, HEADLAMP_GLOW_SIZE });
+	glow.draw(view, projection, eye, sources);
 }

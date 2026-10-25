@@ -112,27 +112,96 @@ static void skierMotion(float t, const Spline& piste, float& distance, float& sp
 }
 
 //-----------------------------------------------------------------------------
-// Instant où le skieur passe à la distance s, quand il va à vitesse constante
+// Temps du skieur où il passe à la distance s, quand il va à vitesse constante
 // (après l'accélération, avant le freinage)
 //-----------------------------------------------------------------------------
-float skierTime(float s)
+static float skierSimTime(float s)
 {
 	float tAccel = SKIER_SPEED / SKIER_START_ACCEL;
 	float dAccel = 0.5f * SKIER_START_ACCEL * tAccel * tAccel;
 	return SKI_START + tAccel + (s - dAccel) / SKIER_SPEED;
 }
 
-float skierDistance(float t, const Spline& piste)
+//-----------------------------------------------------------------------------
+// Ralenti. La vitesse du temps du skieur (dtau / dt) vaut 1, sauf pendant le
+// saut où elle descend à SLOW_FACTOR, avec des transitions douces (smoothstep).
+// On en déduit, une fois pour toutes, l'instant de la vidéo pour chaque temps
+// du skieur, tous les SLOW_STEP : t augmente de dtau / vitesse à chaque pas
+// (intégration avec un pas fixe). Les deux conversions lisent cette table.
+//-----------------------------------------------------------------------------
+static const float SLOW_STEP = 0.001f;		// s (temps du skieur)
+static std::vector<float> gVideoTimes;		// gVideoTimes[i] : instant de la vidéo pour tau = i x SLOW_STEP
+
+void prepare(const Terrain& terrain)
 {
-	float distance, speed;
-	skierMotion(t, piste, distance, speed);
-	return distance;
+	float takeoff = skierSimTime(terrain.jumpStart());
+	float landing = skierSimTime(terrain.jumpStart() + terrain.jumpLength()) + SLOW_AFTER;
+
+	gVideoTimes.clear();
+	double t = 0.0;		// double : 60 000 additions de 0,001 en float dériveraient de quelques millisecondes
+	for (int i = 0; i * SLOW_STEP <= DURATION + 1.0f; i++)
+	{
+		float tau = i * SLOW_STEP;
+		gVideoTimes.push_back((float)t);
+		float slow = glm::smoothstep(takeoff - SLOW_RAMP, takeoff, tau)
+		           * (1.0f - glm::smoothstep(landing, landing + SLOW_RAMP, tau));
+		t += SLOW_STEP / glm::mix(1.0f, SLOW_FACTOR, slow);
+	}
+}
+
+float videoTime(float tau)
+{
+	if (gVideoTimes.empty() || tau <= 0.0f)
+		return tau;
+	float i = tau / SLOW_STEP;
+	int k = (int)i;
+	if (k + 1 >= (int)gVideoTimes.size())		// après la table : plus de ralenti
+		return gVideoTimes.back() + (tau - (gVideoTimes.size() - 1) * SLOW_STEP);
+	return glm::mix(gVideoTimes[k], gVideoTimes[k + 1], i - k);
+}
+
+float simTime(float t)
+{
+	if (gVideoTimes.empty() || t <= 0.0f)
+		return t;
+	if (t >= gVideoTimes.back())
+		return (gVideoTimes.size() - 1) * SLOW_STEP + (t - gVideoTimes.back());
+	// La table est croissante : recherche dichotomique de la case qui contient t
+	auto it = std::upper_bound(gVideoTimes.begin(), gVideoTimes.end(), t);
+	int k = (int)(it - gVideoTimes.begin()) - 1;
+	float f = (t - gVideoTimes[k]) / (gVideoTimes[k + 1] - gVideoTimes[k]);
+	return (k + f) * SLOW_STEP;
+}
+
+float duration()
+{
+	return videoTime(DURATION);
 }
 
 //-----------------------------------------------------------------------------
-// Position et orientation du skieur à l'instant t
+// Instant de la vidéo où le skieur passe à la distance s (à pleine vitesse)
 //-----------------------------------------------------------------------------
+float skierTime(float s)
+{
+	return videoTime(skierSimTime(s));
+}
+
+float skierDistance(float t, const Spline& piste)
+{
+	float distance, speed;
+	skierMotion(simTime(t), piste, distance, speed);
+	return distance;
+}
+
 SkierState skierState(float t, const Spline& piste, const Terrain& terrain)
+{
+	return skierStateAt(simTime(t), piste, terrain);
+}
+
+//-----------------------------------------------------------------------------
+// Position et orientation du skieur au temps t du skieur
+//-----------------------------------------------------------------------------
+SkierState skierStateAt(float t, const Spline& piste, const Terrain& terrain)
 {
 	float s, speed;
 	skierMotion(t, piste, s, speed);
@@ -278,16 +347,18 @@ CameraState cameraState(float t, const Spline& piste, const Terrain& terrain)
 	}
 
 	//--- 53-60 s : arrivée au chalet : on glisse lentement en suivant le skieur --
-	if (t >= ARRIVAL_START)
+	float arrivalStart = videoTime(ARRIVAL_START);
+	if (t >= arrivalStart)
 	{
-		float p = (t - ARRIVAL_START) / (DURATION - ARRIVAL_START);
+		float p = (t - arrivalStart) / (duration() - arrivalStart);
 		float easeOut = 1.0f - (1.0f - p) * (1.0f - p);	// rapide au début, lent à la fin
 		glm::vec3 skier = skierState(t, piste, terrain).position;
 		return { keyframe(arrivalEyes, (int)ARRIVAL_EYES.size(), easeOut), skier + glm::vec3(0.0f, 0.9f, 0.0f), 50.0f };
 	}
 
-	//--- 35.5-40.5 s : le saut en contre-jour (section 8.5) -----------------------
-	if (t >= BACKLIGHT_START && t < BACKLIGHT_END)
+	//--- 35.5-40.5 s : le saut en contre-jour ------------------------------------
+	float backlightEnd = videoTime(BACKLIGHT_END);	// le plan dure plus longtemps : il contient le ralenti
+	if (t >= BACKLIGHT_START && t < backlightEnd)
 	{
 		// A = sommet de la parabole du saut (vy / vx = tan(theta), vx = SKIER_SPEED).
 		// Le tremplin est sur la ligne droite x = 0, son bord en z = JUMP_Z.
@@ -297,14 +368,16 @@ CameraState cameraState(float t, const Spline& piste, const Terrain& terrain)
 		// C = A - L * distance : vu de C, le soleil est exactement derrière A
 		glm::vec3 C = A - BACKLIGHT_DISTANCE * sunDirection();
 
-		// Travelling latéral : caméra et cible glissent ensemble, le soleil reste au centre
-		float p = (t - BACKLIGHT_START) / (BACKLIGHT_END - BACKLIGHT_START);
-		glm::vec3 slide(0.0f, 0.0f, glm::mix(-BACKLIGHT_SLIDE, BACKLIGHT_SLIDE, p));
+		// Travelling latéral : caméra et cible glissent ensemble, le soleil reste au centre.
+		// Il est centré sur le sommet du saut : à cet instant, le décalage est nul et le
+		// skieur passe exactement devant le soleil.
+		float tApex = skierTime(terrain.jumpStart() + uApex);
+		float tLanding = skierTime(terrain.jumpStart() + terrain.jumpLength());
+		float p = glm::clamp((t - tApex) / (backlightEnd - BACKLIGHT_START), -0.5f, 0.5f);
+		glm::vec3 slide(0.0f, 0.0f, 2.0f * BACKLIGHT_SLIDE * p);
 
 		// Après le sommet, la caméra tourne doucement vers le point de réception, et
 		// y reste : on voit la gerbe de neige de la réception, à contre-jour
-		float tApex = skierTime(terrain.jumpStart() + uApex);
-		float tLanding = skierTime(terrain.jumpStart() + terrain.jumpLength());
 		glm::vec3 landing = pistePoint(piste, terrain.jumpStart() + terrain.jumpLength());
 		landing.y = terrain.height(landing.x, landing.z) + 1.0f;
 		glm::vec3 target = glm::mix(A + slide, landing, glm::smoothstep(tApex, tLanding + 0.3f, t));
